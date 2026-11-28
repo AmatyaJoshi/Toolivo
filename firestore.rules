@@ -1,0 +1,290 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrapAdmin() {
+      return isVerified() && request.auth.token.email == 'workwithamatya@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin() || (
+        isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidEmail(val) {
+      return val is string && val.size() >= 3 && val.size() <= 254 && val.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+    }
+
+    function isValidHttpsUrl(val) {
+      return val is string && val.size() >= 8 && val.size() <= 300 && val.matches('^https://[^\\s]+$');
+    }
+
+    // Validation Blueprints
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'plan', 'billingCycle', 'credits', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'plan', 'billingCycle', 'credits', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && isValidEmail(data.email)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.role in ['user', 'advertiser', 'admin']
+        && data.plan in ['free', 'plus', 'pro', 'business']
+        && data.billingCycle in ['monthly', 'annual']
+        && data.credits is number && data.credits >= 0 && data.credits <= 1000000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'email', 'grantedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'grantedAt'])
+        && isValidId(data.uid)
+        && isValidEmail(data.email)
+        && data.grantedAt is timestamp;
+    }
+
+    function isValidUsageLog(data) {
+      return data.keys().hasAll(['userId', 'toolSlug', 'toolName', 'category', 'inputSummary', 'outputSummary', 'processingMs', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'toolSlug', 'toolName', 'category', 'inputSummary', 'outputSummary', 'processingMs', 'createdAt'])
+        && isValidId(data.userId)
+        && data.toolSlug is string && data.toolSlug.size() >= 1 && data.toolSlug.size() <= 80 && data.toolSlug.matches('^[a-z0-9\\-]+$')
+        && data.toolName is string && data.toolName.size() >= 1 && data.toolName.size() <= 120
+        && data.category in ['video', 'image', 'pdf', 'audio', 'text', 'developer', 'productivity']
+        && data.inputSummary is string && data.inputSummary.size() >= 1 && data.inputSummary.size() <= 200
+        && data.outputSummary is string && data.outputSummary.size() >= 1 && data.outputSummary.size() <= 200
+        && data.processingMs is number && data.processingMs >= 0 && data.processingMs <= 3600000
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSponsorSlot(data) {
+      return data.keys().hasAll(['slotId', 'slotNumber', 'name', 'tier', 'location', 'monthlyPriceUsd', 'status', 'updatedAt'])
+        && data.keys().hasOnly(['slotId', 'slotNumber', 'name', 'tier', 'location', 'monthlyPriceUsd', 'status', 'companyName', 'tagline', 'destinationUrl', 'logoText', 'activeCampaignId', 'updatedAt'])
+        && isValidId(data.slotId)
+        && data.slotNumber is number && data.slotNumber >= 1 && data.slotNumber <= 24
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+        && data.tier in ['basic', 'featured', 'premium']
+        && data.location in ['homepage', 'tool_page', 'category_page', 'processing_screen']
+        && data.monthlyPriceUsd is number && data.monthlyPriceUsd >= 1 && data.monthlyPriceUsd <= 10000
+        && data.status in ['available', 'occupied']
+        && (!('companyName' in data) || (data.companyName is string && data.companyName.size() <= 80))
+        && (!('tagline' in data) || (data.tagline is string && data.tagline.size() <= 140))
+        && (!('destinationUrl' in data) || data.destinationUrl == '' || isValidHttpsUrl(data.destinationUrl))
+        && (!('logoText' in data) || (data.logoText is string && data.logoText.size() <= 16))
+        && (!('activeCampaignId' in data) || (data.activeCampaignId is string && data.activeCampaignId.size() <= 128))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdCampaign(data) {
+      return data.keys().hasAll(['advertiserId', 'slotId', 'slotTier', 'companyName', 'tagline', 'destinationUrl', 'contactEmail', 'durationMonths', 'monthlyPriceUsd', 'totalAmountUsd', 'status', 'impressions', 'clicks', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['advertiserId', 'slotId', 'slotTier', 'companyName', 'tagline', 'destinationUrl', 'logoText', 'contactEmail', 'durationMonths', 'monthlyPriceUsd', 'totalAmountUsd', 'status', 'impressions', 'clicks', 'createdAt', 'updatedAt'])
+        && isValidId(data.advertiserId)
+        && isValidId(data.slotId)
+        && data.slotId.matches('^slot-(1[0-2]|[1-9])$')
+        && data.slotTier in ['basic', 'featured', 'premium']
+        && data.companyName is string && data.companyName.size() >= 1 && data.companyName.size() <= 80
+        && data.tagline is string && data.tagline.size() >= 1 && data.tagline.size() <= 140
+        && isValidHttpsUrl(data.destinationUrl)
+        && (!('logoText' in data) || (data.logoText is string && data.logoText.size() <= 16))
+        && isValidEmail(data.contactEmail)
+        && data.durationMonths is number && data.durationMonths >= 1 && data.durationMonths <= 12
+        && data.monthlyPriceUsd is number && data.monthlyPriceUsd >= 1 && data.monthlyPriceUsd <= 10000
+        && data.totalAmountUsd is number && data.totalAmountUsd >= 1 && data.totalAmountUsd <= 120000
+        && data.status in ['pending_payment', 'pending_review', 'approved', 'rejected', 'expired']
+        && data.impressions is number && data.impressions >= 0 && data.impressions <= 100000000
+        && data.clicks is number && data.clicks >= 0 && data.clicks <= 100000000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPlatformConfig(data) {
+      return data.keys().hasAll(['configId', 'basicAdUsd', 'featuredAdUsd', 'premiumAdUsd', 'plusMonthlyUsd', 'proMonthlyUsd', 'businessMonthlyUsd', 'disabledToolSlugs', 'updatedAt'])
+        && data.keys().hasOnly(['configId', 'basicAdUsd', 'featuredAdUsd', 'premiumAdUsd', 'plusMonthlyUsd', 'proMonthlyUsd', 'businessMonthlyUsd', 'disabledToolSlugs', 'updatedAt'])
+        && isValidId(data.configId)
+        && data.basicAdUsd is number && data.basicAdUsd >= 1 && data.basicAdUsd <= 10000
+        && data.featuredAdUsd is number && data.featuredAdUsd >= 1 && data.featuredAdUsd <= 10000
+        && data.premiumAdUsd is number && data.premiumAdUsd >= 1 && data.premiumAdUsd <= 10000
+        && data.plusMonthlyUsd is number && data.plusMonthlyUsd >= 0 && data.plusMonthlyUsd <= 1000
+        && data.proMonthlyUsd is number && data.proMonthlyUsd >= 0 && data.proMonthlyUsd <= 1000
+        && data.businessMonthlyUsd is number && data.businessMonthlyUsd >= 0 && data.businessMonthlyUsd <= 5000
+        && data.disabledToolSlugs is list && data.disabledToolSlugs.size() <= 100
+        && (data.disabledToolSlugs.size() == 0 || data.disabledToolSlugs[0] is string)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidContactMessage(data) {
+      return data.keys().hasAll(['senderId', 'name', 'email', 'subject', 'message', 'createdAt'])
+        && data.keys().hasOnly(['senderId', 'name', 'email', 'subject', 'message', 'createdAt'])
+        && isValidId(data.senderId)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+        && isValidEmail(data.email)
+        && data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 140
+        && data.message is string && data.message.size() >= 5 && data.message.size() <= 2000
+        && data.createdAt is timestamp;
+    }
+
+    // 1. Users (Strict PII Isolation)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrapAdmin();
+      allow create: if isVerified()
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && isOwner(userId)
+        && incoming().uid == request.auth.uid
+        && incoming().email == request.auth.token.email
+        && incoming().role == 'user'
+        && incoming().plan == 'free'
+        && incoming().credits == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified()
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            isOwner(userId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'billingCycle', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // 2. Admins Registry
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrapAdmin();
+      allow create: if isValidId(userId) && isValidAdminRecord(incoming()) && isAdmin() && incoming().grantedAt == request.time;
+      allow update: if isValidId(userId) && isValidAdminRecord(incoming()) && isAdmin() && incoming().uid == existing().uid;
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // 3. Usage Logs (Tool Processing History)
+    match /usageLogs/{logId} {
+      allow get: if isValidId(logId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isBootstrapAdmin());
+      allow create: if isVerified()
+        && isValidId(logId)
+        && isValidUsageLog(incoming())
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(logId) && isVerified() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // 4. Sponsor Slots (Public Inventory - No PII)
+    match /sponsorSlots/{slotId} {
+      allow get: if isValidId(slotId);
+      allow list: if true;
+      allow create: if isValidId(slotId)
+        && isValidSponsorSlot(incoming())
+        && isAdmin()
+        && incoming().slotId == slotId
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(slotId)
+        && isValidSponsorSlot(incoming())
+        && isAdmin()
+        && incoming().slotId == existing().slotId
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(slotId) && isAdmin();
+    }
+
+    // 5. Ad Campaigns (Private Advertiser Bookings + Admin Approval Workflow)
+    match /adCampaigns/{campaignId} {
+      allow get: if isValidId(campaignId) && isSignedIn() && (existing().advertiserId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.advertiserId == request.auth.uid || isBootstrapAdmin());
+      allow create: if isVerified()
+        && isValidId(campaignId)
+        && isValidAdCampaign(incoming())
+        && incoming().advertiserId == request.auth.uid
+        && incoming().status in ['pending_payment', 'pending_review']
+        && incoming().impressions == 0
+        && incoming().clicks == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified()
+        && isValidId(campaignId)
+        && isValidAdCampaign(incoming())
+        && incoming().advertiserId == existing().advertiserId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            existing().advertiserId == request.auth.uid
+            && !(existing().status in ['rejected', 'expired'])
+            && incoming().status == existing().status
+            && incoming().impressions == existing().impressions
+            && incoming().clicks == existing().clicks
+            && incoming().diff(existing()).affectedKeys().hasOnly(['companyName', 'tagline', 'destinationUrl', 'logoText', 'contactEmail', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(campaignId) && isAdmin();
+    }
+
+    // 6. Platform Configuration (Admin Pricing & Tool Switches - Non-PII)
+    match /platformConfig/{configId} {
+      allow get: if isValidId(configId);
+      allow list: if true;
+      allow create: if isValidId(configId)
+        && isValidPlatformConfig(incoming())
+        && isAdmin()
+        && incoming().configId == configId
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(configId)
+        && isValidPlatformConfig(incoming())
+        && isAdmin()
+        && incoming().configId == existing().configId
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(configId) && isAdmin();
+    }
+
+    // 7. Contact Messages (Private)
+    match /contactMessages/{messageId} {
+      allow get: if isValidId(messageId) && isSignedIn() && (existing().senderId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.senderId == request.auth.uid || isBootstrapAdmin());
+      allow create: if isVerified()
+        && isValidId(messageId)
+        && isValidContactMessage(incoming())
+        && incoming().senderId == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(messageId) && isAdmin();
+    }
+  }
+}

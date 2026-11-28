@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile, subscription tier, and credit balance.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["user", "advertiser", "admin"] },
+        "plan": { "type": "string", "enum": ["free", "plus", "pro", "business"] },
+        "billingCycle": { "type": "string", "enum": ["monthly", "annual"] },
+        "credits": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "plan", "billingCycle", "credits", "createdAt", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted administrator membership document keyed by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "grantedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "grantedAt"]
+    },
+    "UsageLog": {
+      "title": "UsageLog",
+      "description": "Individual tool execution record owned by a signed-in user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "toolSlug": { "type": "string", "maxLength": 80, "pattern": "^[a-z0-9\\-]+$" },
+        "toolName": { "type": "string", "maxLength": 120 },
+        "category": { "type": "string", "enum": ["video", "image", "pdf", "audio", "text", "developer", "productivity"] },
+        "inputSummary": { "type": "string", "maxLength": 200 },
+        "outputSummary": { "type": "string", "maxLength": 200 },
+        "processingMs": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "toolSlug", "toolName", "category", "inputSummary", "outputSummary", "processingMs", "createdAt"]
+    },
+    "SponsorSlot": {
+      "title": "SponsorSlot",
+      "description": "Public advertising placement inventory slot (12 total slots, USD pricing).",
+      "type": "object",
+      "properties": {
+        "slotId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "slotNumber": { "type": "number" },
+        "name": { "type": "string", "maxLength": 100 },
+        "tier": { "type": "string", "enum": ["basic", "featured", "premium"] },
+        "location": { "type": "string", "enum": ["homepage", "tool_page", "category_page", "processing_screen"] },
+        "monthlyPriceUsd": { "type": "number" },
+        "status": { "type": "string", "enum": ["available", "occupied"] },
+        "companyName": { "type": "string", "maxLength": 80 },
+        "tagline": { "type": "string", "maxLength": 140 },
+        "destinationUrl": { "type": "string", "maxLength": 300 },
+        "logoText": { "type": "string", "maxLength": 16 },
+        "activeCampaignId": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["slotId", "slotNumber", "name", "tier", "location", "monthlyPriceUsd", "status", "updatedAt"]
+    },
+    "AdCampaign": {
+      "title": "AdCampaign",
+      "description": "Private advertiser campaign booking record including contact email and approval workflow.",
+      "type": "object",
+      "properties": {
+        "advertiserId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "slotId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "slotTier": { "type": "string", "enum": ["basic", "featured", "premium"] },
+        "companyName": { "type": "string", "maxLength": 80 },
+        "tagline": { "type": "string", "maxLength": 140 },
+        "destinationUrl": { "type": "string", "maxLength": 300 },
+        "logoText": { "type": "string", "maxLength": 16 },
+        "contactEmail": { "type": "string", "format": "email", "maxLength": 254 },
+        "durationMonths": { "type": "number" },
+        "monthlyPriceUsd": { "type": "number" },
+        "totalAmountUsd": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending_payment", "pending_review", "approved", "rejected", "expired"] },
+        "impressions": { "type": "number" },
+        "clicks": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["advertiserId", "slotId", "slotTier", "companyName", "tagline", "destinationUrl", "contactEmail", "durationMonths", "monthlyPriceUsd", "totalAmountUsd", "status", "impressions", "clicks", "createdAt", "updatedAt"]
+    },
+    "PlatformConfig": {
+      "title": "PlatformConfig",
+      "description": "Admin-managed global USD pricing configuration and enabled utility switches.",
+      "type": "object",
+      "properties": {
+        "configId": { "type": "string", "maxLength": 64, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "basicAdUsd": { "type": "number" },
+        "featuredAdUsd": { "type": "number" },
+        "premiumAdUsd": { "type": "number" },
+        "plusMonthlyUsd": { "type": "number" },
+        "proMonthlyUsd": { "type": "number" },
+        "businessMonthlyUsd": { "type": "number" },
+        "disabledToolSlugs": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["configId", "basicAdUsd", "featuredAdUsd", "premiumAdUsd", "plusMonthlyUsd", "proMonthlyUsd", "businessMonthlyUsd", "disabledToolSlugs", "updatedAt"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "Support or advertiser inquiry submitted by a signed-in user.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "subject": { "type": "string", "maxLength": 140 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "name", "email", "subject", "message", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile, role, plan, and credit balance."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Admin authorization registry."
+    },
+    "/usageLogs/{logId}": {
+      "schema": { "$ref": "#/entities/UsageLog" },
+      "description": "Per-user tool execution log entries."
+    },
+    "/sponsorSlots/{slotId}": {
+      "schema": { "$ref": "#/entities/SponsorSlot" },
+      "description": "12 public advertising placement slots (no PII)."
+    },
+    "/adCampaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/AdCampaign" },
+      "description": "Advertiser campaign bookings and approval workflow."
+    },
+    "/platformConfig/{configId}": {
+      "schema": { "$ref": "#/entities/PlatformConfig" },
+      "description": "Global USD pricing and utility configuration."
+    },
+    "/contactMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/ContactMessage" },
+      "description": "Authenticated contact and advertiser inquiries."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Toolivo",
+  "description": "Every Tool You Need. One Click Away. Browser-first online utilities for video, images, PDFs, audio, text, developer workflows, and productivity.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

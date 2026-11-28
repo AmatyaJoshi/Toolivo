@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import {
   getCategoryById,
   getToolBySlug,
@@ -16,10 +15,13 @@ import {
   ToolDetailPage,
   ToolsDirectoryPage,
 } from './pages/PublicPages';
-import { ProPage } from './pages/ProPage';
-import { AdvertisePage } from './pages/AdvertisePage';
-import { AdminPage } from './pages/AdminPage';
 import { EntitlementProvider } from './context/EntitlementContext';
+
+const ProPage = lazy(() => import('./pages/ProPage').then((m) => ({ default: m.ProPage })));
+const AdvertisePage = lazy(() =>
+  import('./pages/AdvertisePage').then((m) => ({ default: m.AdvertisePage }))
+);
+const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })));
 
 interface RouteState {
   pathname: string;
@@ -126,9 +128,9 @@ export default function App() {
       description =
         'Upgrade to Toolivo Pro with no account required. Multi-currency INR and USD checkout via Dodo Payments with instant recovery key delivery.';
     } else if (path === '/advertise') {
-      title = 'Advertise on Toolivo — 8 Exclusive Sponsor Frames ($18/mo)';
+      title = 'Advertise on Toolivo — 8 Exclusive Sponsor Frames ($15/mo)';
       description =
-        'Sponsor Toolivo across 8 curated homepage and alongside-tool frames starting at $18/mo USD (₹1,299/mo INR) via Dodo Payments.';
+        'Sponsor Toolivo across 8 curated homepage and alongside-tool frames starting at $15/mo USD (₹1,299/mo INR) via Dodo Payments.';
     } else if (path === '/admin') {
       title = 'Admin — Billing, Pricing & Sponsor Approval | Toolivo';
       description = 'Toolivo Dodo Payments pricing configuration and sponsor approval dashboard.';
@@ -234,17 +236,15 @@ export default function App() {
           onToggleTheme={() => setDarkMode((d) => !d)}
           onOpenCommand={() => setCommandOpen(true)}
         >
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={route.pathname}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-            >
-              {renderPage()}
-            </motion.div>
-          </AnimatePresence>
+          <Suspense
+            fallback={
+              <div className="mx-auto max-w-5xl px-4 py-16 text-center text-xs text-slate-500 dark:text-slate-400">
+                Loading workspace...
+              </div>
+            }
+          >
+            <div key={route.pathname}>{renderPage()}</div>
+          </Suspense>
         </AppLayout>
 
         <CommandPalette

@@ -1,6 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
-import gsap from 'gsap';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowRight,
   Check,
@@ -9,6 +7,7 @@ import {
   Copy,
   CreditCard,
   Crown,
+  ExternalLink,
   FileCheck2,
   Globe,
   KeyRound,
@@ -19,7 +18,6 @@ import {
   ShieldCheck,
   Sparkles,
   UserCheck,
-  Zap,
 } from 'lucide-react';
 import {
   CURRENCY_OPTIONS,
@@ -72,6 +70,7 @@ export const ProPage: React.FC<{ navigate: (path: string) => void }> = ({ naviga
     currency,
     setCurrency,
     entitlement,
+    activeRecoveryKey,
     isPro,
     activateByKey,
     clearEntitlement,
@@ -88,6 +87,8 @@ export const ProPage: React.FC<{ navigate: (path: string) => void }> = ({ naviga
   const [billingName, setBillingName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
 
   // Accountless restoration & cross-device recovery state
   const [restoreKeyInput, setRestoreKeyInput] = useState('');
@@ -101,8 +102,6 @@ export const ProPage: React.FC<{ navigate: (path: string) => void }> = ({ naviga
   const [verifiedKey, setVerifiedKey] = useState<string | null>(null);
   const [verificationNotice, setVerificationNotice] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
-
-  const proRootRef = useRef<HTMLDivElement>(null);
 
   // Fetch live multi-currency plans from backend (admin-configurable INR/USD pricing)
   useEffect(() => {
@@ -192,17 +191,28 @@ export const ProPage: React.FC<{ navigate: (path: string) => void }> = ({ naviga
     };
   }, [pendingSessionId, activateByKey]);
 
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const ctx = gsap.context(() => {
-      gsap.fromTo(
-        '[data-gsap-pro-card]',
-        { y: 14, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.38, stagger: 0.06, ease: 'power3.out', clearProps: 'transform' }
-      );
-    }, proRootRef);
-    return () => ctx.revert();
-  }, [tab]);
+  const handleOpenCustomerPortal = async () => {
+    if (!activeRecoveryKey) return;
+    setPortalBusy(true);
+    setPortalError(null);
+    try {
+      const res = await fetch('/api/pro/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recoveryKey: activeRecoveryKey }),
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setPortalError(data.error || 'Could not open Dodo Payments Customer Portal right now.');
+    } catch {
+      setPortalError('Unable to reach Dodo Payments Customer Portal right now.');
+    } finally {
+      setPortalBusy(false);
+    }
+  };
 
   const visiblePlans = plans.filter((p) =>
     tab === 'credits' ? p.kind === 'credits' : p.kind !== 'credits'
@@ -284,7 +294,7 @@ export const ProPage: React.FC<{ navigate: (path: string) => void }> = ({ naviga
   const displayPrice = formatMoney(selectedPlan.priceUsd, selectedPlan.priceInr, currency);
 
   return (
-    <div ref={proRootRef} className="mx-auto max-w-5xl space-y-10 px-4 py-7 sm:space-y-12 sm:px-8 sm:py-10">
+    <div className="mx-auto max-w-5xl space-y-10 px-4 py-7 sm:space-y-12 sm:px-8 sm:py-10">
       {/* Active Entitlement Banner (if Pro is active on this device) */}
       {isPro && entitlement && (
         <section className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5 dark:border-emerald-400/35 dark:bg-emerald-500/10">
@@ -306,15 +316,33 @@ export const ProPage: React.FC<{ navigate: (path: string) => void }> = ({ naviga
                       : 'Permanent lifetime access'}{' '}
                   · Sponsor frames hidden
                 </p>
+                {portalError && (
+                  <p className="mt-1.5 text-xs font-medium text-rose-600 dark:text-rose-400">
+                    {portalError}
+                  </p>
+                )}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={clearEntitlement}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              Remove from this device
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {activeRecoveryKey && (
+                <button
+                  type="button"
+                  disabled={portalBusy}
+                  onClick={handleOpenCustomerPortal}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-700 disabled:opacity-50"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  {portalBusy ? 'Opening Dodo Portal...' : 'Manage Billing & Invoices'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={clearEntitlement}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Remove from this device
+              </button>
+            </div>
           </div>
         </section>
       )}
@@ -455,17 +483,14 @@ export const ProPage: React.FC<{ navigate: (path: string) => void }> = ({ naviga
           const active = selectedPlan.id === plan.id;
           const formatted = formatMoney(plan.priceUsd, plan.priceInr, currency);
           return (
-            <motion.button
+            <button
               key={plan.id}
-              data-gsap-pro-card
               type="button"
-              whileHover={{ y: -2 }}
-              transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
               onClick={() => {
                 setSelectedPlanId(plan.id);
                 setFeedback(null);
               }}
-              className={`enterprise-card flex flex-col justify-between rounded-2xl p-5 text-left ${
+              className={`enterprise-card flex flex-col justify-between rounded-2xl p-5 text-left hover:-translate-y-0.5 ${
                 active ? '!border-amber-500 ring-1 ring-amber-500/40 dark:!border-amber-400' : ''
               }`}
             >
@@ -516,7 +541,7 @@ export const ProPage: React.FC<{ navigate: (path: string) => void }> = ({ naviga
                   {active ? `Selected — ${plan.name}` : `Select ${plan.name}`}
                 </span>
               </div>
-            </motion.button>
+            </button>
           );
         })}
       </section>

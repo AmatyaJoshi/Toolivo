@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   CheckCircle2,
   Clock,
+  CloudUpload,
+  Copy,
   CreditCard,
   DollarSign,
   KeyRound,
@@ -150,6 +152,11 @@ export const AdminPage: React.FC = () => {
   // Editable draft maps for pricing & sponsor slots
   const [pricingDrafts, setPricingDrafts] = useState<Record<string, AdminPricingItem>>({});
   const [slotDrafts, setSlotDrafts] = useState<Record<string, AdminSponsorSlot>>({});
+  const [dodoProducts, setDodoProducts] = useState<
+    Array<{ product_id: string; name: string; price?: number | null; currency?: string | null; is_recurring?: boolean }>
+  >([]);
+  const [dodoSyncBusy, setDodoSyncBusy] = useState(false);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
 
   useEffect(() => {
     fetch('/api/admin/auth/status')
@@ -318,6 +325,57 @@ export const AdminPage: React.FC = () => {
     if (res.ok) await loadOverview(token);
   };
 
+  const handleFetchDodoProducts = async () => {
+    if (!token) return;
+    setDodoSyncBusy(true);
+    setBusyMsg('Fetching live products from Dodo Payments...');
+    try {
+      const res = await fetch('/api/admin/dodo/products', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setDodoProducts(data.products || []);
+        setBusyMsg(`Loaded ${(data.products || []).length} product(s) from Dodo Payments (${data.environment}).`);
+      } else {
+        setBusyMsg(data.error || 'Could not fetch Dodo Payments products.');
+      }
+    } catch {
+      setBusyMsg('Network error while fetching Dodo Payments products.');
+    } finally {
+      setDodoSyncBusy(false);
+    }
+  };
+
+  const handleSyncDodoProducts = async () => {
+    if (!token) return;
+    setDodoSyncBusy(true);
+    setBusyMsg('Auto-creating missing USD & INR products in Dodo Payments...');
+    try {
+      const res = await fetch('/api/admin/dodo/sync-products', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const createdCount = Array.isArray(data.created) ? data.created.length : 0;
+        const errorCount = Array.isArray(data.errors) ? data.errors.length : 0;
+        setBusyMsg(
+          `Dodo Product Sync complete: created ${createdCount} product(s)` +
+            (errorCount > 0 ? ` (${errorCount} warnings — check Dodo API key permissions).` : ' and linked all Product IDs automatically.')
+        );
+        await loadOverview(token);
+        await handleFetchDodoProducts();
+      } else {
+        setBusyMsg(data.error || 'Failed to sync Dodo Payments products.');
+      }
+    } catch {
+      setBusyMsg('Network error while syncing products with Dodo Payments.');
+    } finally {
+      setDodoSyncBusy(false);
+    }
+  };
+
   if (!token) {
     return (
       <div className="mx-auto max-w-md px-4 py-16">
@@ -481,6 +539,88 @@ export const AdminPage: React.FC = () => {
       {/* TAB 1: Multi-Currency Pricing & Dodo Product IDs */}
       {tab === 'pricing' && overview && (
         <div className="space-y-6">
+          {/* Dodo Payments Gateway Setup & One-Click Product Sync */}
+          <section className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-5 dark:border-violet-500/25 dark:bg-violet-950/20">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="font-display text-sm font-bold text-slate-950 dark:text-white">
+                  Dodo Payments Gateway Setup &amp; Product Sync
+                </h2>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                  Dodo Payments is the exclusive payment gateway for Toolivo Pro and Sponsor bookings. Point your Dodo webhook to the URL below and sync missing USD/INR products in one click.
+                </p>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  <code className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-mono text-[11px] text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                    {typeof window !== 'undefined'
+                      ? `${window.location.origin}/api/payments/dodo/webhook`
+                      : '/api/payments/dodo/webhook'}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(
+                          `${window.location.origin}/api/payments/dodo/webhook`
+                        );
+                        setCopiedWebhook(true);
+                        setTimeout(() => setCopiedWebhook(false), 1800);
+                      } catch {
+                        // Clipboard unavailable
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  >
+                    <Copy className="h-3 w-3" />
+                    {copiedWebhook ? 'Copied' : 'Copy Webhook URL'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={dodoSyncBusy || !overview.dodoConfigured}
+                  onClick={handleFetchDodoProducts}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Fetch Live Dodo Products
+                </button>
+                <button
+                  type="button"
+                  disabled={dodoSyncBusy || !overview.dodoConfigured}
+                  onClick={handleSyncDodoProducts}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50"
+                >
+                  <CloudUpload className="h-3.5 w-3.5" />
+                  {dodoSyncBusy ? 'Syncing with Dodo...' : 'Auto-Create Missing Products in Dodo'}
+                </button>
+              </div>
+            </div>
+
+            {dodoProducts.length > 0 && (
+              <div className="mt-4 border-t border-violet-500/20 pt-3">
+                <p className="font-mono text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">
+                  Live Products in Dodo Account ({dodoProducts.length})
+                </p>
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {dodoProducts.slice(0, 18).map((prod) => (
+                    <div
+                      key={prod.product_id}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] dark:border-slate-800 dark:bg-slate-900/90"
+                    >
+                      <p className="truncate font-semibold text-slate-900 dark:text-white">{prod.name}</p>
+                      <p className="mt-0.5 font-mono text-[10px] text-violet-600 dark:text-violet-400">
+                        {prod.product_id}
+                        {prod.currency ? ` · ${prod.currency}` : ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
           <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-[#0D101C]">
             <h2 className="font-display text-sm font-bold text-slate-950 dark:text-white">
               Pro Plans, Passes, Lifetime &amp; Credit Packs (Independent INR &amp; USD Pricing)
@@ -590,7 +730,7 @@ export const AdminPage: React.FC = () => {
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-[#0D101C]">
             <h2 className="font-display text-sm font-bold text-slate-950 dark:text-white">
-              8 Sponsor Frames (Default $18 USD / ₹1,299 INR First Month)
+              Sponsor Placements (Top Full-Width Banner $49 USD + 8 Frames $15 USD / ₹1,299 INR First Month)
             </h2>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -606,12 +746,12 @@ export const AdminPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800">
-                  {overview.slots.slice(0, 8).map((slot) => {
+                  {overview.slots.map((slot) => {
                     const draft = slotDrafts[slot.slotId] || slot;
                     return (
                       <tr key={slot.slotId}>
                         <td className="py-2.5 pr-3 font-mono font-bold text-slate-900 dark:text-white">
-                          Frame {slot.slotNumber}
+                          {slot.slotId === 'frame-top' ? 'Top Banner' : `Frame ${slot.slotNumber}`}
                         </td>
                         <td className="py-2.5 pr-3">
                           <span

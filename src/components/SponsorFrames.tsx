@@ -2,17 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowUpRight,
-  Check,
-  Copy,
   ExternalLink,
   Lock,
-  Mail,
   Plus,
   ShieldCheck,
   X,
 } from 'lucide-react';
 import {
-  OWNER_SPONSOR_EMAIL,
   TOP_BANNER_FRAME,
   appendReferralParam,
   formatFramePrice,
@@ -39,8 +35,6 @@ export const SponsorBookingModal: React.FC<SponsorModalProps> = ({ frame, onClos
   const [durationMonths, setDurationMonths] = useState<number>(1);
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [fallbackReady, setFallbackReady] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   if (!frame) return null;
 
@@ -61,24 +55,10 @@ export const SponsorBookingModal: React.FC<SponsorModalProps> = ({ frame, onClos
   const isBanner = frame.id === 'frame-top';
   const frameTitle = isBanner ? 'Full-Width Top Banner' : `Frame ${frame.number}`;
 
-  const bookingBrief = [
-    `Toolivo Sponsor Reservation — ${frameTitle}`,
-    `Total: ${formattedTotal} (${durationMonths} mo · ${formatFramePrice(frame, currency)})`,
-    `Brand Name: ${previewBrand}`,
-    `Tagline: ${previewTagline}`,
-    `Monogram: ${previewMonogram}`,
-    logoUrl.trim() ? `Logo URL: ${logoUrl.trim()}` : '',
-    `Destination URL: ${previewTrackedUrl}`,
-    `Contact Email: ${contactEmail || '(not provided)'}`,
-  ]
-    .filter(Boolean)
-    .join('\n');
-
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setStatusMessage(null);
-    setFallbackReady(false);
 
     try {
       const res = await fetch('/api/sponsors/checkout', {
@@ -103,24 +83,12 @@ export const SponsorBookingModal: React.FC<SponsorModalProps> = ({ frame, onClos
       }
       setStatusMessage(
         data.error ||
-          'Dodo Payments Checkout activates once DODO_PAYMENTS_API_KEY and Sponsor Product IDs are configured in /admin. You can copy or email your reservation brief below.'
+          'Dodo Payments Checkout activates once DODO_PAYMENTS_API_KEY and Sponsor Product IDs are configured in /admin.'
       );
-      setFallbackReady(true);
     } catch {
-      setStatusMessage('Unable to reach Dodo Payments checkout right now. Use direct reservation email or copy brief below.');
-      setFallbackReady(true);
+      setStatusMessage('Unable to reach Dodo Payments checkout right now. Please try again in a moment.');
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleCopyBrief = async () => {
-    try {
-      await navigator.clipboard.writeText(bookingBrief);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard unavailable
     }
   };
 
@@ -352,30 +320,8 @@ export const SponsorBookingModal: React.FC<SponsorModalProps> = ({ frame, onClos
                   <Lock className="h-3.5 w-3.5" />
                   {submitting
                     ? 'Connecting to Dodo Payments...'
-                    : `Pay ${formattedTotal} · Reserve ${frameTitle}`}
+                    : `Pay ${formattedTotal} via Dodo Payments`}
                 </button>
-
-                {fallbackReady && (
-                  <>
-                    <a
-                      href={`mailto:${OWNER_SPONSOR_EMAIL}?subject=${encodeURIComponent(
-                        `Toolivo Sponsor Frame ${frame.number} (${formattedTotal})`
-                      )}&body=${encodeURIComponent(bookingBrief)}`}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-                    >
-                      <Mail className="h-3.5 w-3.5" />
-                      Email Owner
-                    </a>
-                    <button
-                      type="button"
-                      onClick={handleCopyBrief}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-                    >
-                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-                      {copied ? 'Copied' : 'Copy Brief'}
-                    </button>
-                  </>
-                )}
               </div>
             </div>
 

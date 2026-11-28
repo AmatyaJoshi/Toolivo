@@ -10,15 +10,21 @@ import {
   DODO_SUPPORTED_LOCAL_CURRENCIES,
   cancelDodoSubscription,
   createDodoCheckoutSession,
+  createDodoCustomerPortalSession,
+  createDodoProduct,
   createDodoRefund,
   getDodoEnvironment,
   getItemMinorAmount,
   isDodoConfigured,
   isDodoWebhookConfigured,
+  listDodoProducts,
   resolveProDodoProductId,
   resolveSponsorDodoProductId,
+  retrieveDodoCheckoutStatus,
+  retrieveDodoPayment,
   verifyAndUnwrapDodoWebhook,
 } from '../services/dodoService.ts';
+import type { UnwrapWebhookEvent } from 'dodopayments/resources/webhooks/webhooks';
 import {
   processVerifiedDodoWebhook,
   revealVerifiedCheckoutKey,
@@ -405,18 +411,118 @@ export const BillingController = {
     return res.redirect(302, safeDestination);
   },
 
-  // ---- Webhook-Verified Checkout Status Polling (Never Trusts Redirect URL!) ----
-  getCheckoutStatus(req: Request, res: Response) {
+  // ---- Webhook-Verified + Server-to-Server Dodo API Checkout Status Polling (Never Trusts Redirect URL!) ----
+  async getCheckoutStatus(req: Request, res: Response) {
     const sessionId = String(req.params.sessionId || '').trim();
     if (!sessionId || sessionId.length > 128) {
       return res.status(400).json({ error: 'Invalid checkout session ID.' });
     }
     const db = getBillingDb();
-    const result = revealVerifiedCheckoutKey(db, sessionId);
+    let result = revealVerifiedCheckoutKey(db, sessionId);
     if (result.sessionStatus === 'not_found') {
       return res.status(404).json({ error: 'Checkout session not found.' });
     }
+
+    // If still pending webhook delivery and Dodo API is configured, perform authenticated server-to-server
+    // verification directly against Dodo Payments API (never trusting browser query parameters)
+    if (!result.verified && result.sessionStatus === 'created' && isDodoConfigured()) {
+      const sessionRec = db.getCheckoutSession(sessionId);
+      if (sessionRec?.externalSessionId) {
+        try {
+          const dodoStatus = await retrieveDodoCheckoutStatus(sessionRec.externalSessionId);
+          if (dodoStatus.payment_status === 'succeeded' && dodoStatus.payment_id) {
+            const payment = await retrieveDodoPayment(dodoStatus.payment_id);
+            if (payment.status === 'succeeded') {
+              const syntheticEvent = {
+                business_id: payment.business_id,
+                type: 'payment.succeeded',
+                timestamp: payment.created_at || new Date().toISOString(),
+                data: {
+                  payload_type: 'Payment',
+                  payment_id: payment.payment_id,
+                  checkout_session_id: payment.checkout_session_id || sessionRec.externalSessionId,
+                  subscription_id: payment.subscription_id || undefined,
+                  currency: payment.currency,
+                  total_amount: payment.total_amount,
+                  customer: {
+                    email: payment.customer?.email || sessionRec.customerEmail,
+                    name: payment.customer?.name || sessionRec.customerName || undefined,
+                  },
+                  metadata: {
+                    ...(payment.metadata || {}),
+                    toolivo_session_id: sessionRec.id,
+                    toolivo_kind: sessionRec.kind,
+                    toolivo_item_id: sessionRec.itemId,
+                    toolivo_currency: sessionRec.currency,
+                    ...(sessionRec.campaignId ? { toolivo_campaign_id: sessionRec.campaignId } : {}),
+                  },
+                },
+              } as unknown as UnwrapWebhookEvent;
+
+              await processVerifiedDodoWebhook(
+                db,
+                syntheticEvent,
+                `dodo_api_${payment.payment_id}`,
+                JSON.stringify(syntheticEvent),
+                getSafeAppUrl(req)
+              );
+              result = revealVerifiedCheckoutKey(db, sessionId);
+            }
+          } else if (dodoStatus.payment_status === 'failed' || dodoStatus.payment_status === 'cancelled') {
+            db.updateCheckoutSession(sessionRec.id, {
+              status: dodoStatus.payment_status,
+            });
+            result = revealVerifiedCheckoutKey(db, sessionId);
+          }
+        } catch (err) {
+          console.error('Dodo server-to-server session verification check skipped:', err instanceof Error ? err.message : err);
+        }
+      }
+    }
+
     return res.json(result);
+  },
+
+  // ---- Official Dodo Payments Customer Portal (Invoices, Subscriptions & Payment Methods) ----
+  async createCustomerPortal(req: Request, res: Response) {
+    const parsed = validateKeySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'A valid active Toolivo Pro recovery key is required.' });
+    }
+    if (!isDodoConfigured()) {
+      return res.status(503).json({
+        error: 'Dodo Payments API key is not configured on the server.',
+      });
+    }
+
+    const db = getBillingDb();
+    const ent = db.getEntitlementByRawKey(parsed.data.licenseKey);
+    if (!ent || !db.isEntitlementActive(ent)) {
+      return res.status(403).json({ error: 'No active Toolivo Pro licence found for this key.' });
+    }
+    if (ent.provider !== 'dodo') {
+      return res.status(400).json({
+        error: 'This legacy licence was issued prior to Dodo Payments migration. Contact support for billing changes.',
+      });
+    }
+
+    try {
+      const portal = await createDodoCustomerPortalSession(
+        ent.customerEmail,
+        `${getSafeAppUrl(req)}/pro`
+      );
+      if (!portal?.link) {
+        return res.status(404).json({
+          error: 'No Dodo Payments customer profile found for this email yet.',
+        });
+      }
+      return res.json({ url: portal.link });
+    } catch (err) {
+      console.error('Dodo Customer Portal creation failed:', err);
+      return res.status(502).json({
+        error: 'Unable to open Dodo Payments Customer Portal right now.',
+      });
+    }
   },
 
   // ---- Signed Dodo Payments Webhook Endpoint (Raw Body Verified via Standard Webhooks) ----
@@ -666,6 +772,172 @@ export const BillingController = {
       webhooks,
       emails,
     });
+  },
+
+  async listAdminDodoProducts(_req: Request, res: Response) {
+    if (!isDodoConfigured()) {
+      return res.status(503).json({
+        error: 'DODO_PAYMENTS_API_KEY is not configured on the server.',
+      });
+    }
+    try {
+      const products = await listDodoProducts();
+      return res.json({
+        environment: getDodoEnvironment(),
+        count: products.length,
+        products,
+      });
+    } catch (err) {
+      console.error('Failed to list Dodo products:', err);
+      return res.status(502).json({
+        error: 'Could not fetch products from Dodo Payments API. Verify your DODO_PAYMENTS_API_KEY and environment.',
+      });
+    }
+  },
+
+  async syncAdminDodoProducts(_req: Request, res: Response) {
+    if (!isDodoConfigured()) {
+      return res.status(503).json({
+        error: 'DODO_PAYMENTS_API_KEY is not configured on the server.',
+      });
+    }
+
+    const db = getBillingDb();
+    const created: Array<{ target: string; currency: 'USD' | 'INR'; productId: string }> = [];
+
+    try {
+      // 1. Provision missing USD & INR Dodo products for Pro plans, passes, lifetime & credit packs
+      const pricingItems = db.listPricingItems(true);
+      for (const item of pricingItems) {
+        let usdId = item.dodoProductIdUsd;
+        let inrId = item.dodoProductIdInr;
+
+        if (!usdId) {
+          const p = await createDodoProduct({
+            name: `Toolivo ${item.name} (USD)`,
+            description: item.subLabel,
+            currency: 'USD',
+            priceMinor: item.priceUsdMinor,
+            recurringInterval: item.kind === 'subscription' ? item.billingInterval : null,
+            metadata: { toolivo_item_id: item.id, toolivo_kind: 'pro', currency: 'USD' },
+          });
+          usdId = p.productId;
+          created.push({ target: item.id, currency: 'USD', productId: usdId });
+        }
+
+        if (!inrId) {
+          const p = await createDodoProduct({
+            name: `Toolivo ${item.name} (INR)`,
+            description: item.subLabel,
+            currency: 'INR',
+            priceMinor: item.priceInrMinor,
+            recurringInterval: item.kind === 'subscription' ? item.billingInterval : null,
+            metadata: { toolivo_item_id: item.id, toolivo_kind: 'pro', currency: 'INR' },
+          });
+          inrId = p.productId;
+          created.push({ target: item.id, currency: 'INR', productId: inrId });
+        }
+
+        if (usdId !== item.dodoProductIdUsd || inrId !== item.dodoProductIdInr) {
+          db.updatePricingItem(item.id, {
+            dodoProductIdUsd: usdId,
+            dodoProductIdInr: inrId,
+            dodoProductIdDefault: item.dodoProductIdDefault || usdId,
+          });
+        }
+      }
+
+      // 2. Provision shared Dodo sponsor products (1 for full-width banner, 1 for standard 8 frames) per currency
+      const slots = db.listSponsorSlots();
+      const bannerSlot = slots.find((s) => s.slotId === 'frame-top');
+      const standardSlots = slots.filter((s) => s.slotId !== 'frame-top');
+
+      if (bannerSlot) {
+        let usdId = bannerSlot.dodoProductIdUsd;
+        let inrId = bannerSlot.dodoProductIdInr;
+        if (!usdId) {
+          const p = await createDodoProduct({
+            name: 'Toolivo Full-Width Top Sponsor Banner (USD)',
+            description: 'Exclusive top full-width sponsor banner across Toolivo homepage & tools',
+            currency: 'USD',
+            priceMinor: bannerSlot.priceUsdMinor,
+            recurringInterval: null,
+            metadata: { toolivo_kind: 'sponsor', slot_tier: 'banner', currency: 'USD' },
+          });
+          usdId = p.productId;
+          created.push({ target: 'frame-top', currency: 'USD', productId: usdId });
+        }
+        if (!inrId) {
+          const p = await createDodoProduct({
+            name: 'Toolivo Full-Width Top Sponsor Banner (INR)',
+            description: 'Exclusive top full-width sponsor banner across Toolivo homepage & tools',
+            currency: 'INR',
+            priceMinor: bannerSlot.priceInrMinor,
+            recurringInterval: null,
+            metadata: { toolivo_kind: 'sponsor', slot_tier: 'banner', currency: 'INR' },
+          });
+          inrId = p.productId;
+          created.push({ target: 'frame-top', currency: 'INR', productId: inrId });
+        }
+        if (usdId !== bannerSlot.dodoProductIdUsd || inrId !== bannerSlot.dodoProductIdInr) {
+          db.updateSponsorSlotPricing(bannerSlot.slotId, {
+            dodoProductIdUsd: usdId,
+            dodoProductIdInr: inrId,
+          });
+        }
+      }
+
+      const existingStdUsd = standardSlots.find((s) => s.dodoProductIdUsd)?.dodoProductIdUsd || '';
+      const existingStdInr = standardSlots.find((s) => s.dodoProductIdInr)?.dodoProductIdInr || '';
+      let stdUsdId = existingStdUsd;
+      let stdInrId = existingStdInr;
+
+      if (!stdUsdId && standardSlots[0]) {
+        const p = await createDodoProduct({
+          name: 'Toolivo Sponsor Frame — 1 Month (USD)',
+          description: 'Curated sponsor frame across Toolivo homepage & all 43 utilities',
+          currency: 'USD',
+          priceMinor: standardSlots[0].priceUsdMinor,
+          recurringInterval: null,
+          metadata: { toolivo_kind: 'sponsor', slot_tier: 'standard', currency: 'USD' },
+        });
+        stdUsdId = p.productId;
+        created.push({ target: 'frames-01-08', currency: 'USD', productId: stdUsdId });
+      }
+      if (!stdInrId && standardSlots[0]) {
+        const p = await createDodoProduct({
+          name: 'Toolivo Sponsor Frame — 1 Month (INR)',
+          description: 'Curated sponsor frame across Toolivo homepage & all 43 utilities',
+          currency: 'INR',
+          priceMinor: standardSlots[0].priceInrMinor,
+          recurringInterval: null,
+          metadata: { toolivo_kind: 'sponsor', slot_tier: 'standard', currency: 'INR' },
+        });
+        stdInrId = p.productId;
+        created.push({ target: 'frames-01-08', currency: 'INR', productId: stdInrId });
+      }
+
+      for (const slot of standardSlots) {
+        if (!slot.dodoProductIdUsd || !slot.dodoProductIdInr) {
+          db.updateSponsorSlotPricing(slot.slotId, {
+            dodoProductIdUsd: slot.dodoProductIdUsd || stdUsdId,
+            dodoProductIdInr: slot.dodoProductIdInr || stdInrId,
+          });
+        }
+      }
+
+      return res.json({
+        synced: true,
+        environment: getDodoEnvironment(),
+        createdCount: created.length,
+        created,
+      });
+    } catch (err) {
+      console.error('Failed to auto-sync Dodo products:', err);
+      return res.status(502).json({
+        error: 'Failed to create products in Dodo Payments. Verify API key permissions and environment.',
+      });
+    }
   },
 
   updateAdminPricingItem(req: Request, res: Response) {

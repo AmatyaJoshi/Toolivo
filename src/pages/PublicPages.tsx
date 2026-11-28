@@ -1,6 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'motion/react';
-import gsap from 'gsap';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   Check,
@@ -28,7 +26,7 @@ import { ToolVisual } from '../components/ToolVisual';
 import { SponsorFramesSection, ToolPageSponsorRail } from '../components/SponsorFrames';
 import { InfiniteToolsMarquee, NotificationCarousel } from '../components/AnnouncementWidgets';
 import { ParticleWaveBanner } from '../components/ParticleWaveBanner';
-import { ToolGridSkeleton, ToolWorkbenchSkeleton } from '../components/ui/skeleton';
+import { ToolWorkbenchSkeleton } from '../components/ui/skeleton';
 
 const MOST_USED_SLUGS = [
   'merge-pdf',
@@ -48,7 +46,7 @@ const SHORT_CUES: Record<string, string> = {
   'passport-photo-maker': '300 DPI + 4×6 sheet',
 };
 
-function CompactToolTile({
+const CompactToolTile = React.memo(function CompactToolTile({
   tool,
   navigate,
   cue,
@@ -60,39 +58,36 @@ function CompactToolTile({
   className?: string;
 }) {
   return (
-    <motion.a
+    <a
       href={`/${tool.slug}`}
       onClick={(e) => {
         e.preventDefault();
         navigate(`/${tool.slug}`);
       }}
-      whileHover={{ y: -2 }}
-      whileTap={{ scale: 0.99 }}
-      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-      className={`enterprise-card group flex flex-col gap-2 rounded-xl p-2.5 sm:gap-3 sm:p-3.5 ${className}`}
+      className={`enterprise-card group flex flex-col gap-2 rounded-xl p-2.5 hover:-translate-y-0.5 active:scale-[0.99] sm:gap-3 sm:p-3.5 ${className}`}
     >
       {/* Instant Visual Preview — Compact on Mobile/Tablet, Full on Desktop */}
       <ToolVisual slug={tool.slug} category={tool.category} variant="card" />
 
       <div className="flex items-start gap-2 px-0.5 sm:gap-2.5">
-        <div className="mt-0.5 hidden h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200/90 bg-slate-50 text-slate-600 transition-colors group-hover:border-violet-500/40 group-hover:text-violet-600 sm:flex dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:group-hover:text-violet-400">
+        <div className="mt-0.5 hidden h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-300/90 bg-slate-100 text-slate-700 transition-colors group-hover:border-violet-500/50 group-hover:text-violet-600 sm:flex dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-200 dark:group-hover:border-violet-400/60 dark:group-hover:text-violet-300">
           <CategoryIcon category={tool.category} className="h-3.5 w-3.5" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-1.5">
-            <h3 className="truncate font-display text-xs font-semibold text-slate-950 sm:text-sm dark:text-white">
+            <h3 className="truncate font-display text-xs font-bold text-slate-950 sm:text-sm dark:text-white">
               {tool.name}
             </h3>
-            <ArrowRight className="hidden h-3.5 w-3.5 shrink-0 text-slate-400 opacity-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-violet-500 group-hover:opacity-100 sm:inline" />
+            <ArrowRight className="hidden h-3.5 w-3.5 shrink-0 text-slate-500 opacity-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-violet-500 group-hover:opacity-100 sm:inline dark:text-slate-400 dark:group-hover:text-violet-300" />
           </div>
-          <p className="mt-0.5 line-clamp-1 text-[11px] leading-snug text-slate-500 sm:line-clamp-2 sm:text-xs dark:text-slate-400">
+          <p className="mt-0.5 line-clamp-1 text-[11px] leading-snug text-slate-600 sm:line-clamp-2 sm:text-xs dark:text-slate-300">
             {cue || tool.shortDescription}
           </p>
         </div>
       </div>
-    </motion.a>
+    </a>
   );
-}
+});
 
 const RECENT_TOOLS_KEY = 'toolivo-recent-tools';
 
@@ -125,38 +120,16 @@ export const HomePage: React.FC<{
 }> = ({ navigate, onOpenCommand }) => {
   const [activeCategory, setActiveCategory] = useState<ToolCategoryId | 'all'>('all');
   const [inlineQuery, setInlineQuery] = useState('');
-  const [gridLoading, setGridLoading] = useState(false);
   const [showAllToolsMobile, setShowAllToolsMobile] = useState(false);
   const [recentSlugs, setRecentSlugs] = useState<string[]>(() => readRecentToolSlugs());
-  const homeRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setRecentSlugs(readRecentToolSlugs());
   }, []);
 
-  // GSAP entrance stagger for hero & featured tiles (respects reduced motion)
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const ctx = gsap.context(() => {
-      gsap.fromTo(
-        '[data-gsap-hero]',
-        { y: 14, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.45, stagger: 0.06, ease: 'power3.out', clearProps: 'transform' }
-      );
-      gsap.fromTo(
-        '[data-gsap-featured]',
-        { y: 16, opacity: 0 },
-        { y: 0, opacity: 1, duration: 0.42, stagger: 0.045, delay: 0.08, ease: 'power2.out', clearProps: 'transform' }
-      );
-    }, homeRootRef);
-    return () => ctx.revert();
-  }, []);
-
   const handleCategoryChange = (nextCategory: ToolCategoryId | 'all') => {
     if (nextCategory === activeCategory) return;
-    setGridLoading(true);
     setActiveCategory(nextCategory);
-    window.setTimeout(() => setGridLoading(false), 160);
   };
 
   const mostUsed = useMemo(
@@ -198,13 +171,10 @@ export const HomePage: React.FC<{
   );
 
   return (
-    <div ref={homeRootRef}>
+    <div>
       {/* Zone 1: Open, Seamless Hero over Continuous Aurora Canvas (Zero Partition Line) */}
       <section>
-        <div
-          data-gsap-hero
-          className="mx-auto flex max-w-6xl flex-col gap-5 px-4 pt-7 pb-7 sm:px-8 sm:pt-10 sm:pb-9"
-        >
+        <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 pt-7 pb-7 sm:px-8 sm:pt-10 sm:pb-9">
           <div className="max-w-4xl">
             <h1 className="font-display text-2xl font-extrabold tracking-tight text-balance text-slate-950 sm:text-4xl lg:text-[42px] lg:leading-[1.12] dark:text-white">
               Free PDF, Video, Audio &amp; Photo Tools
@@ -305,13 +275,12 @@ export const HomePage: React.FC<{
           </div>
           <div className="mt-2.5 grid grid-cols-2 gap-2.5 sm:mt-3 sm:grid-cols-3 sm:gap-3.5">
             {mostUsed.map((tool) => (
-              <div key={tool.slug} data-gsap-featured>
-                <CompactToolTile
-                  tool={tool}
-                  navigate={navigate}
-                  cue={SHORT_CUES[tool.slug]}
-                />
-              </div>
+              <CompactToolTile
+                key={tool.slug}
+                tool={tool}
+                navigate={navigate}
+                cue={SHORT_CUES[tool.slug]}
+              />
             ))}
           </div>
         </section>
@@ -352,29 +321,18 @@ export const HomePage: React.FC<{
                   onClick={() => handleCategoryChange(tab.id)}
                   className={`relative shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
                     active
-                      ? 'text-slate-950 dark:text-white'
+                      ? 'bg-white text-slate-950 shadow-xs dark:bg-violet-600 dark:text-white'
                       : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
                   }`}
                 >
-                  {active && (
-                    <motion.span
-                      layoutId="home-cat-pill"
-                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                      className="absolute inset-0 rounded-lg bg-white shadow-xs dark:bg-slate-800"
-                    />
-                  )}
-                  <span className="relative z-10">{tab.label}</span>
+                  {tab.label}
                 </button>
               );
             })}
           </div>
         </div>
 
-        {gridLoading ? (
-          <div className="mt-3.5">
-            <ToolGridSkeleton count={6} />
-          </div>
-        ) : visibleTools.length > 0 ? (
+        {visibleTools.length > 0 ? (
           <>
             <div className="mt-3.5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3.5">
               {visibleTools.map((tool, idx) => (
@@ -468,13 +426,6 @@ export const ToolDetailPage: React.FC<{
   const tool = getToolBySlug(slug);
   const ToolComponent = getToolComponent(slug);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [workbenchReady, setWorkbenchReady] = useState(false);
-
-  useEffect(() => {
-    setWorkbenchReady(false);
-    const id = window.setTimeout(() => setWorkbenchReady(true), 130);
-    return () => window.clearTimeout(id);
-  }, [slug]);
 
   useEffect(() => {
     if (!tool) return;
@@ -618,16 +569,14 @@ export const ToolDetailPage: React.FC<{
 
       {/* Main Focal Anchor + 2 Sponsor Frames Alongside Workbench (Exact Clip Utils Placement) */}
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_230px]">
-        {workbenchReady ? (
+        <Suspense fallback={<ToolWorkbenchSkeleton />}>
           <section
             aria-label={`${tool.name} workspace`}
             className="rounded-2xl border border-slate-200 bg-white/95 p-5 sm:p-7 dark:border-slate-800 dark:bg-[#0D121F]/95"
           >
             <ToolComponent />
           </section>
-        ) : (
-          <ToolWorkbenchSkeleton />
-        )}
+        </Suspense>
 
         <ToolPageSponsorRail slug={tool.slug} />
       </div>

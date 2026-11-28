@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, type PanInfo } from 'motion/react';
 import { ArrowRight, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Button } from './ui/button';
@@ -43,19 +43,19 @@ const ANNOUNCEMENTS: AnnouncementItem[] = [
 ];
 
 /* =========================================================================
-   1. ANIMATED ANNOUNCEMENT BAR — Solid High-Contrast Minimal Strip (Calm Speed)
+   1. ANIMATED ANNOUNCEMENT BAR — Solid High-Contrast Minimal Strip (Zero JS-rAF Overhead)
    ========================================================================= */
 export const AnimatedAnnouncementBar: React.FC<{
   navigate: (path: string) => void;
-}> = ({ navigate }) => {
+}> = React.memo(({ navigate }) => {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     if (paused || dismissed) return;
-    // Lowered calm rotation speed (6.8s)
     const timer = window.setInterval(() => {
+      if (document.hidden) return;
       setIndex((i) => (i + 1) % ANNOUNCEMENTS.length);
     }, 6800);
     return () => window.clearInterval(timer);
@@ -108,29 +108,23 @@ export const AnimatedAnnouncementBar: React.FC<{
         </div>
 
         <div className="relative flex min-w-0 flex-1 items-center justify-center overflow-hidden">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={current.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.36, ease: [0.16, 1, 0.3, 1] }}
-              className="flex min-w-0 items-center justify-center gap-2.5 truncate"
+          <div
+            key={current.id}
+            className="flex min-w-0 items-center justify-center gap-2.5 truncate"
+          >
+            <span className="hidden shrink-0 rounded bg-white/18 px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-amber-200 sm:inline">
+              {current.label}
+            </span>
+            <span className="truncate font-semibold text-white">{current.message}</span>
+            <a
+              href={current.href}
+              onClick={(e) => handleAction(e, current.href)}
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-white px-2.5 py-0.5 text-[11px] font-bold text-slate-950 shadow-2xs transition-colors hover:bg-amber-300"
             >
-              <span className="hidden shrink-0 rounded bg-white/18 px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-amber-200 sm:inline">
-                {current.label}
-              </span>
-              <span className="truncate font-semibold text-white">{current.message}</span>
-              <a
-                href={current.href}
-                onClick={(e) => handleAction(e, current.href)}
-                className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-white px-2.5 py-0.5 text-[11px] font-bold text-slate-950 shadow-2xs transition-colors hover:bg-amber-300"
-              >
-                <span>{current.cta}</span>
-                <ArrowRight className="h-3 w-3" />
-              </a>
-            </motion.div>
-          </AnimatePresence>
+              <span>{current.cta}</span>
+              <ArrowRight className="h-3 w-3" />
+            </a>
+          </div>
         </div>
 
         <button
@@ -144,10 +138,10 @@ export const AnimatedAnnouncementBar: React.FC<{
       </div>
     </div>
   );
-};
+});
 
 /* =========================================================================
-   2. INFINITE MARQUEE — Inverted High-Contrast Minimal Band (Calm 68s Glide)
+   2. INFINITE MARQUEE — GPU-Composited Sibling Tracks (Single Texture Tile, Zero Lag)
    ========================================================================= */
 const MARQUEE_ITEMS: { label: string; meta: string; slug: string }[] = [
   { label: 'Merge PDF', meta: 'PDF + PDF → 1', slug: 'merge-pdf' },
@@ -155,34 +149,73 @@ const MARQUEE_ITEMS: { label: string; meta: string; slug: string }[] = [
   { label: 'PDF to Word', meta: 'Editable .DOC', slug: 'pdf-to-word' },
   { label: 'Sign PDF', meta: 'Draw or type', slug: 'sign-pdf' },
   { label: 'Video to GIF', meta: 'Looping GIF89a', slug: 'video-to-gif' },
-  { label: 'Passport Photo Maker', meta: '300 DPI · 4×6 Sheet', slug: 'passport-photo-maker' },
+  { label: 'Passport Photo', meta: '300 DPI · 4×6 Sheet', slug: 'passport-photo-maker' },
   { label: 'Background Remover', meta: 'Transparent PNG', slug: 'background-remover' },
-  { label: 'Audio Volume Booster', meta: 'Up to +18 dB', slug: 'audio-volume-booster' },
-  { label: 'Excel to PDF', meta: '.XLSX → PDF', slug: 'excel-to-pdf' },
-  { label: 'Redact & Crop PDF', meta: 'Permanent flatten', slug: 'redact-crop-pdf' },
-  { label: 'Video Trimmer', meta: 'Exact timestamps', slug: 'video-trimmer' },
+  { label: 'Volume Booster', meta: 'Up to +18 dB', slug: 'audio-volume-booster' },
   { label: 'JSON Formatter', meta: 'Validate & sort', slug: 'json-formatter' },
   { label: 'QR Code Generator', meta: 'PNG & SVG', slug: 'qr-code-generator' },
-  { label: 'Text to Speech', meta: 'Voice & dictation', slug: 'text-to-speech' },
 ];
 
 export const InfiniteToolsMarquee: React.FC<{
   navigate: (path: string) => void;
-}> = ({ navigate }) => {
+}> = React.memo(({ navigate }) => {
+  const containerRef = useRef<HTMLElement>(null);
+
+  // Automatically pause GPU animation when scrolled offscreen or browser tab is hidden (zero React re-renders)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    let inView = true;
+    const syncPaused = () => {
+      el.dataset.paused = !inView || document.hidden ? 'true' : 'false';
+    };
+
+    const observer =
+      typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver(
+            (entries) => {
+              inView = entries[0]?.isIntersecting ?? true;
+              syncPaused();
+            },
+            { threshold: 0 }
+          )
+        : null;
+
+    observer?.observe(el);
+    document.addEventListener('visibilitychange', syncPaused);
+    syncPaused();
+
+    return () => {
+      observer?.disconnect();
+      document.removeEventListener('visibilitychange', syncPaused);
+    };
+  }, []);
+
+  const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const anchor = (e.target as HTMLElement).closest('a[data-slug]') as HTMLAnchorElement | null;
+    if (!anchor) return;
+    const slug = anchor.dataset.slug;
+    if (!slug) return;
+    e.preventDefault();
+    navigate(`/${slug}`);
+  };
+
   const renderTrack = (copyKey: string) => (
-    <div className="flex shrink-0 items-center" aria-hidden={copyKey === 'b'}>
+    <div
+      key={copyKey}
+      className="toolivo-marquee-track"
+      aria-hidden={copyKey === 'b'}
+    >
       {MARQUEE_ITEMS.map((item) => (
         <React.Fragment key={`${copyKey}-${item.slug}`}>
           <a
             href={`/${item.slug}`}
+            data-slug={item.slug}
             tabIndex={copyKey === 'b' ? -1 : 0}
-            onClick={(e) => {
-              e.preventDefault();
-              navigate(`/${item.slug}`);
-            }}
-            className="group inline-flex items-center gap-2 whitespace-nowrap px-4 py-1.5 text-xs transition-colors"
+            className="group inline-flex items-center gap-2 whitespace-nowrap px-4 py-1.5 text-xs"
           >
-            <span className="font-display font-semibold text-white transition-colors group-hover:text-amber-300 dark:text-slate-950 dark:group-hover:text-blue-700">
+            <span className="font-display font-semibold text-white group-hover:text-amber-300 dark:text-slate-950 dark:group-hover:text-blue-700">
               {item.label}
             </span>
             <span className="font-mono text-[11px] text-slate-400 dark:text-slate-600">
@@ -199,18 +232,17 @@ export const InfiniteToolsMarquee: React.FC<{
 
   return (
     <section
+      ref={containerRef}
       aria-label="Instant utilities marquee"
       className="marquee-container w-full overflow-hidden border-y border-slate-900 bg-[#0B0E18] py-2 dark:border-white/25 dark:bg-[#F8FAFC]"
     >
-      <div className="w-full overflow-hidden">
-        <div className="animate-toolivo-marquee">
-          {renderTrack('a')}
-          {renderTrack('b')}
-        </div>
+      <div className="flex w-full overflow-hidden" onClick={handleTrackClick}>
+        {renderTrack('a')}
+        {renderTrack('b')}
       </div>
     </section>
   );
-};
+});
 
 /* =========================================================================
    3. NOTIFICATION CAROUSEL — Contrasting Solid Surface + Motion Swipe Gestures
@@ -298,7 +330,7 @@ const CAROUSEL_NOTICES: CarouselNotice[] = [
 
 export const NotificationCarousel: React.FC<{
   navigate: (path: string) => void;
-}> = ({ navigate }) => {
+}> = React.memo(({ navigate }) => {
   const [activeIdx, setActiveIdx] = useState(0);
   const [paused, setPaused] = useState(false);
 
@@ -306,6 +338,7 @@ export const NotificationCarousel: React.FC<{
     if (paused) return;
     // Lowered calm rotation speed (8.5s)
     const timer = window.setInterval(() => {
+      if (document.hidden) return;
       setActiveIdx((i) => (i + 1) % CAROUSEL_NOTICES.length);
     }, 8500);
     return () => window.clearInterval(timer);
@@ -430,4 +463,4 @@ export const NotificationCarousel: React.FC<{
       </div>
     </section>
   );
-};
+});

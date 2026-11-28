@@ -1,5 +1,6 @@
 import DodoPayments from 'dodopayments';
 import type { Currency } from 'dodopayments/resources/misc';
+import type { Price } from 'dodopayments/resources/products/products';
 import type { UnwrapWebhookEvent } from 'dodopayments/resources/webhooks/webhooks';
 import type { PricingItemRecord, SponsorSlotRecord, SupportedCurrency } from '../db/billingDb.ts';
 
@@ -116,6 +117,8 @@ export async function createDodoCheckoutSession(input: CreateDodoCheckoutInput) 
     feature_flags: {
       allow_currency_selection: false,
       allow_discount_code: true,
+      allow_tax_id: true,
+      redirect_immediately: false,
     },
     customization: {
       theme: 'system',
@@ -130,8 +133,120 @@ export async function createDodoCheckoutSession(input: CreateDodoCheckoutInput) 
 }
 
 export async function retrieveDodoCheckoutStatus(dodoSessionId: string) {
+  if (!isDodoConfigured()) {
+    throw new Error('DODO_PAYMENTS_API_KEY is not configured on the server.');
+  }
   const client = createDodoClient();
   return client.checkoutSessions.retrieve(dodoSessionId);
+}
+
+export async function retrieveDodoPayment(paymentId: string) {
+  if (!isDodoConfigured()) {
+    throw new Error('DODO_PAYMENTS_API_KEY is not configured on the server.');
+  }
+  const client = createDodoClient();
+  return client.payments.retrieve(paymentId);
+}
+
+export async function listDodoProducts() {
+  if (!isDodoConfigured()) {
+    throw new Error('DODO_PAYMENTS_API_KEY is not configured on the server.');
+  }
+  const client = createDodoClient();
+  const products: Array<{
+    productId: string;
+    name: string;
+    currency: string | null;
+    price: number | null;
+    isRecurring: boolean;
+    metadata: Record<string, string>;
+  }> = [];
+
+  for await (const item of client.products.list({ page_size: 100 })) {
+    products.push({
+      productId: item.product_id,
+      name: item.name || item.product_id,
+      currency: item.currency || null,
+      price: item.price ?? null,
+      isRecurring: Boolean(item.is_recurring),
+      metadata: (item.metadata as Record<string, string>) || {},
+    });
+  }
+  return products;
+}
+
+export interface CreateDodoCatalogProductInput {
+  name: string;
+  description: string;
+  currency: 'USD' | 'INR';
+  priceMinor: number;
+  recurringInterval?: 'month' | 'year' | null;
+  metadata?: Record<string, string>;
+}
+
+export async function createDodoProduct(input: CreateDodoCatalogProductInput) {
+  if (!isDodoConfigured()) {
+    throw new Error('DODO_PAYMENTS_API_KEY is not configured on the server.');
+  }
+  const client = createDodoClient();
+
+  const price: Price = input.recurringInterval
+    ? {
+        type: 'recurring_price',
+        currency: input.currency as Currency,
+        price: input.priceMinor,
+        payment_frequency_count: 1,
+        payment_frequency_interval: input.recurringInterval === 'year' ? 'Year' : 'Month',
+        subscription_period_count: 20,
+        subscription_period_interval: 'Year',
+      }
+    : {
+        type: 'one_time_price',
+        currency: input.currency as Currency,
+        price: input.priceMinor,
+      };
+
+  const product = await client.products.create({
+    name: input.name,
+    description: input.description,
+    tax_category: 'saas',
+    price,
+    metadata: input.metadata || {},
+  });
+
+  return {
+    productId: product.product_id,
+    name: product.name || input.name,
+  };
+}
+
+export async function createDodoCustomerPortalSession(email: string, returnUrl: string) {
+  if (!isDodoConfigured()) {
+    throw new Error('DODO_PAYMENTS_API_KEY is not configured on the server.');
+  }
+  const client = createDodoClient();
+  const normalized = email.trim().toLowerCase();
+
+  let matchedCustomerId: string | null = null;
+  for await (const cust of client.customers.list({ email: normalized, page_size: 10 })) {
+    if (cust.email?.trim().toLowerCase() === normalized) {
+      matchedCustomerId = cust.customer_id;
+      break;
+    }
+  }
+
+  if (!matchedCustomerId) {
+    return null;
+  }
+
+  const portal = await client.customers.customerPortal.create(matchedCustomerId, {
+    return_url: returnUrl,
+  });
+
+  return {
+    link: portal.link,
+    customerId: matchedCustomerId,
+  };
 }
 
 /**

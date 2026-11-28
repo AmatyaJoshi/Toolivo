@@ -195,32 +195,42 @@
   color: transparent;
 }
 
-/* Enterprise Surface Elevation for Light & Dark Cards */
+/* Enterprise Surface Elevation for Light & Dark Service Tiles
+   High-contrast elevated surfaces without per-card backdrop-filter blur for instant 60/120fps scrolling */
 .enterprise-card {
-  background-color: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(203, 213, 225, 0.78);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  backdrop-filter: blur(8px);
-  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  background-color: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.58);
+  box-shadow:
+    0 2px 10px -2px rgba(15, 23, 42, 0.08),
+    0 1px 2px rgba(15, 23, 42, 0.05);
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
 }
 
 .enterprise-card:hover {
   background-color: #ffffff;
-  border-color: rgba(124, 92, 255, 0.5);
-  box-shadow: 0 8px 22px -8px rgba(79, 70, 229, 0.14);
+  border-color: rgba(124, 92, 255, 0.72);
+  box-shadow:
+    0 12px 26px -8px rgba(79, 70, 229, 0.2),
+    0 2px 6px -1px rgba(15, 23, 42, 0.06);
 }
 
 .dark .enterprise-card {
-  background-color: rgba(14, 16, 28, 0.84);
-  border: 1px solid rgba(46, 51, 82, 0.72);
-  box-shadow: none;
-  backdrop-filter: blur(10px);
+  background-color: #14192c;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  box-shadow:
+    0 6px 18px -6px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .dark .enterprise-card:hover {
-  background-color: rgba(18, 21, 38, 0.96);
-  border-color: rgba(124, 92, 255, 0.65);
-  box-shadow: 0 10px 26px -10px rgba(124, 92, 255, 0.24);
+  background-color: #1b223b;
+  border-color: rgba(139, 92, 246, 0.8);
+  box-shadow:
+    0 14px 30px -10px rgba(124, 92, 255, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
 /* Subtle architectural engineering grid backdrop */
@@ -268,25 +278,35 @@
   );
 }
 
-/* Smooth GPU-composited infinite horizontal marquee — calm, readable speed (68s) */
-@keyframes toolivo-marquee {
+/* Smooth GPU-composited infinite horizontal marquee — sibling tracks stay under 4096px GPU texture limit */
+@keyframes toolivo-marquee-track {
   0% {
     transform: translate3d(0, 0, 0);
   }
   100% {
-    transform: translate3d(-50%, 0, 0);
+    transform: translate3d(-100%, 0, 0);
   }
 }
 
-.animate-toolivo-marquee {
-  display: flex;
-  width: max-content;
-  animation: toolivo-marquee 68s linear infinite;
-  will-change: transform;
+.marquee-container {
+  contain: layout style paint;
 }
 
-.marquee-container:hover .animate-toolivo-marquee,
-.marquee-container:focus-within .animate-toolivo-marquee {
+.toolivo-marquee-track {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-width: max-content;
+  animation: toolivo-marquee-track 38s linear infinite;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+}
+
+.marquee-container:hover .toolivo-marquee-track,
+.marquee-container:focus-within .toolivo-marquee-track,
+.marquee-container[data-paused="true"] .toolivo-marquee-track {
   animation-play-state: paused;
 }
 

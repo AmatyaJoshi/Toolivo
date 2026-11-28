@@ -16,39 +16,39 @@ const ACCENT_SURFACE: Record<
   }
 > = {
   pdf: {
-    bg: 'bg-rose-50/70 dark:bg-rose-950/20',
-    highlight: 'group-hover:bg-rose-50 dark:group-hover:bg-rose-950/35',
-    stroke: 'text-rose-600 dark:text-rose-400',
+    bg: 'bg-rose-50/90 dark:bg-rose-950/35',
+    highlight: 'group-hover:bg-rose-50 dark:group-hover:bg-rose-950/50',
+    stroke: 'text-rose-600 dark:text-rose-300',
   },
   image: {
-    bg: 'bg-sky-50/70 dark:bg-sky-950/20',
-    highlight: 'group-hover:bg-sky-50 dark:group-hover:bg-sky-950/35',
-    stroke: 'text-sky-600 dark:text-sky-400',
+    bg: 'bg-sky-50/90 dark:bg-sky-950/35',
+    highlight: 'group-hover:bg-sky-50 dark:group-hover:bg-sky-950/50',
+    stroke: 'text-sky-600 dark:text-sky-300',
   },
   video: {
-    bg: 'bg-indigo-50/70 dark:bg-indigo-950/20',
-    highlight: 'group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/35',
-    stroke: 'text-indigo-600 dark:text-indigo-400',
+    bg: 'bg-indigo-50/90 dark:bg-indigo-950/35',
+    highlight: 'group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/50',
+    stroke: 'text-indigo-600 dark:text-indigo-300',
   },
   audio: {
-    bg: 'bg-emerald-50/70 dark:bg-emerald-950/20',
-    highlight: 'group-hover:bg-emerald-50 dark:group-hover:bg-emerald-950/35',
-    stroke: 'text-emerald-600 dark:text-emerald-400',
+    bg: 'bg-emerald-50/90 dark:bg-emerald-950/35',
+    highlight: 'group-hover:bg-emerald-50 dark:group-hover:bg-emerald-950/50',
+    stroke: 'text-emerald-600 dark:text-emerald-300',
   },
   text: {
-    bg: 'bg-amber-50/70 dark:bg-amber-950/20',
-    highlight: 'group-hover:bg-amber-50 dark:group-hover:bg-amber-950/35',
-    stroke: 'text-amber-600 dark:text-amber-400',
+    bg: 'bg-amber-50/90 dark:bg-amber-950/35',
+    highlight: 'group-hover:bg-amber-50 dark:group-hover:bg-amber-950/50',
+    stroke: 'text-amber-600 dark:text-amber-300',
   },
   developer: {
-    bg: 'bg-violet-50/70 dark:bg-violet-950/20',
-    highlight: 'group-hover:bg-violet-50 dark:group-hover:bg-violet-950/35',
-    stroke: 'text-violet-600 dark:text-violet-400',
+    bg: 'bg-violet-50/90 dark:bg-violet-950/35',
+    highlight: 'group-hover:bg-violet-50 dark:group-hover:bg-violet-950/50',
+    stroke: 'text-violet-600 dark:text-violet-300',
   },
   productivity: {
-    bg: 'bg-blue-50/70 dark:bg-blue-950/20',
-    highlight: 'group-hover:bg-blue-50 dark:group-hover:bg-blue-950/35',
-    stroke: 'text-blue-600 dark:text-blue-400',
+    bg: 'bg-blue-50/90 dark:bg-blue-950/35',
+    highlight: 'group-hover:bg-blue-50 dark:group-hover:bg-blue-950/50',
+    stroke: 'text-blue-600 dark:text-blue-300',
   },
 };
 
@@ -803,14 +803,14 @@ function renderToolSchematic(slug: string): React.ReactNode {
   }
 }
 
-export const ToolVisual: React.FC<ToolVisualProps> = ({ slug, category, variant = 'card' }) => {
+export const ToolVisual: React.FC<ToolVisualProps> = React.memo(({ slug, category, variant = 'card' }) => {
   const accent = ACCENT_SURFACE[category];
   const flowLabel = TOOL_FLOW_LABEL[slug];
 
   if (variant === 'banner') {
     return (
       <div
-        className={`relative overflow-hidden rounded-xl border border-slate-200/90 px-3 py-2 dark:border-slate-800 ${accent.bg}`}
+        className={`relative overflow-hidden rounded-xl border border-slate-300/90 px-3 py-2 dark:border-slate-700/75 ${accent.bg}`}
         aria-hidden="true"
       >
         <svg
@@ -832,20 +832,20 @@ export const ToolVisual: React.FC<ToolVisualProps> = ({ slug, category, variant 
 
   return (
     <div
-      className={`relative overflow-hidden rounded-lg border border-slate-200/80 transition-colors duration-150 dark:border-slate-800/80 ${accent.bg} ${accent.highlight}`}
+      className={`relative overflow-hidden rounded-lg border border-slate-200/95 transition-colors duration-150 dark:border-slate-700/70 ${accent.bg} ${accent.highlight}`}
       aria-hidden="true"
     >
       <svg
         viewBox="0 0 240 100"
-        className="mx-auto h-16 w-full max-w-[240px] transition-transform duration-200 ease-out group-hover:scale-[1.03] sm:h-20 lg:h-24"
+        className="mx-auto h-16 w-full max-w-[240px] transition-transform duration-150 ease-out group-hover:scale-[1.03] sm:h-20 lg:h-24"
       >
         {renderToolSchematic(slug)}
       </svg>
       {flowLabel && (
-        <div className="truncate border-t border-slate-200/75 bg-white/85 px-2 py-0.5 text-center font-mono text-[9.5px] font-medium text-slate-600 sm:px-2.5 sm:py-1 sm:text-[10px] dark:border-slate-800/70 dark:bg-slate-950/55 dark:text-slate-400">
+        <div className="truncate border-t border-slate-200/90 bg-white/95 px-2 py-0.5 text-center font-mono text-[9.5px] font-semibold text-slate-700 sm:px-2.5 sm:py-1 sm:text-[10px] dark:border-slate-700/60 dark:bg-[#0b0e1a]/90 dark:text-slate-300">
           {flowLabel}
         </div>
       )}
     </div>
   );
-};
+});

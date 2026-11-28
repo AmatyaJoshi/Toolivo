@@ -1,117 +1,87 @@
 import React from 'react';
-import {
-  ImageCompressorTool,
-  ImageResizerTool,
-  JpgToPngTool,
-  PngToJpgTool,
-  WebpConverterTool,
-} from './modules/ImageTools';
-import {
-  AudioTrimmerTool,
-  VideoCompressorTool,
-  VideoToAudioTool,
-} from './modules/VideoAudioTools';
-import { MergePdfTool, RotatePdfTool, SplitPdfTool } from './modules/PdfTools';
-import {
-  CompressPdfTool,
-  ExcelToPdfTool,
-  HtmlToPdfTool,
-  JpgToPdfTool,
-  PdfToExcelTool,
-  PdfToJpgTool,
-  PdfToPptTool,
-  PdfToWordTool,
-  WordToPdfTool,
-} from './modules/PdfConvertTools';
-import {
-  OrganizePdfTool,
-  PageNumbersPdfTool,
-  PdfReaderCompareTool,
-  RedactCropPdfTool,
-  RepairUnlockPdfTool,
-  SignPdfTool,
-  WatermarkPdfTool,
-} from './modules/PdfEditTools';
-import {
-  AudioConverterMergerTool,
-  AudioToVideoTool,
-  AudioVolumeBoosterTool,
-  BackgroundRemoverTool,
-  ImageCropRotateTool,
-  PassportPhotoMakerTool,
-  TextToSpeechTool,
-  VideoToGifTool,
-  VideoTrimmerTool,
-} from './modules/ExtraMediaTools';
-import {
-  Base64CodecTool,
-  CaseConverterTool,
-  JsonFormatterTool,
-  PasswordGeneratorTool,
-  QrCodeGeneratorTool,
-  UuidHashGeneratorTool,
-  WordCounterTool,
-} from './modules/DevTextProductivityTools';
 import type { ToolComponentProps } from './types';
 
+function lazyExport<T extends Record<string, React.ComponentType<ToolComponentProps>>>(
+  loader: () => Promise<T>,
+  exportName: keyof T
+): React.LazyExoticComponent<React.ComponentType<ToolComponentProps>> {
+  return React.lazy(() =>
+    loader().then((mod) => ({ default: mod[exportName] as React.ComponentType<ToolComponentProps> }))
+  );
+}
+
+const loadImageTools = () => import('./modules/ImageTools');
+const loadVideoAudioTools = () => import('./modules/VideoAudioTools');
+const loadPdfTools = () => import('./modules/PdfTools');
+const loadPdfConvertTools = () => import('./modules/PdfConvertTools');
+const loadPdfEditTools = () => import('./modules/PdfEditTools');
+const loadExtraMediaTools = () => import('./modules/ExtraMediaTools');
+const loadDevTextTools = () => import('./modules/DevTextProductivityTools');
+
 /**
- * Modular Tool Registry — 38 100% browser-functional utilities
+ * Code-Split Lazy Tool Registry — 43 100% browser-functional utilities.
+ * Heavy libraries (pdf-lib, pdfjs-dist, xlsx, mammoth, jszip, qrcode) are only downloaded
+ * on-demand when a user opens a tool, keeping the homepage bundle ultra-light.
  */
-const TOOL_COMPONENTS: Record<string, React.FC<ToolComponentProps>> = {
-  // PDF Suite (18 tools — iLovePDF + Smallpdf)
-  'merge-pdf': MergePdfTool,
-  'split-pdf': SplitPdfTool,
-  'compress-pdf': CompressPdfTool,
-  'organize-pdf': OrganizePdfTool,
-  'pdf-to-jpg': PdfToJpgTool,
-  'jpg-to-pdf': JpgToPdfTool,
-  'pdf-to-word': PdfToWordTool,
-  'word-to-pdf': WordToPdfTool,
-  'pdf-to-excel': PdfToExcelTool,
-  'excel-to-pdf': ExcelToPdfTool,
-  'pdf-to-ppt': PdfToPptTool,
-  'html-to-pdf': HtmlToPdfTool,
-  'rotate-pdf': RotatePdfTool,
-  'watermark-pdf': WatermarkPdfTool,
-  'page-numbers-pdf': PageNumbersPdfTool,
-  'sign-pdf': SignPdfTool,
-  'redact-crop-pdf': RedactCropPdfTool,
-  'pdf-reader-compare': PdfReaderCompareTool,
-  'repair-unlock-pdf': RepairUnlockPdfTool,
+const TOOL_COMPONENTS: Record<string, React.LazyExoticComponent<React.ComponentType<ToolComponentProps>>> = {
+  // PDF Suite (19 tools)
+  'merge-pdf': lazyExport(loadPdfTools, 'MergePdfTool'),
+  'split-pdf': lazyExport(loadPdfTools, 'SplitPdfTool'),
+  'rotate-pdf': lazyExport(loadPdfTools, 'RotatePdfTool'),
 
-  // Image Suite (8 tools — Clip Utils + iLoveIMG)
-  'image-compressor': ImageCompressorTool,
-  'image-resizer': ImageResizerTool,
-  'background-remover': BackgroundRemoverTool,
-  'passport-photo-maker': PassportPhotoMakerTool,
-  'image-crop-rotate': ImageCropRotateTool,
-  'jpg-to-png': JpgToPngTool,
-  'png-to-jpg': PngToJpgTool,
-  'webp-converter': WebpConverterTool,
+  'compress-pdf': lazyExport(loadPdfConvertTools, 'CompressPdfTool'),
+  'pdf-to-jpg': lazyExport(loadPdfConvertTools, 'PdfToJpgTool'),
+  'jpg-to-pdf': lazyExport(loadPdfConvertTools, 'JpgToPdfTool'),
+  'pdf-to-word': lazyExport(loadPdfConvertTools, 'PdfToWordTool'),
+  'word-to-pdf': lazyExport(loadPdfConvertTools, 'WordToPdfTool'),
+  'pdf-to-excel': lazyExport(loadPdfConvertTools, 'PdfToExcelTool'),
+  'excel-to-pdf': lazyExport(loadPdfConvertTools, 'ExcelToPdfTool'),
+  'pdf-to-ppt': lazyExport(loadPdfConvertTools, 'PdfToPptTool'),
+  'html-to-pdf': lazyExport(loadPdfConvertTools, 'HtmlToPdfTool'),
 
-  // Video Suite (5 tools — Clip Utils)
-  'video-compressor': VideoCompressorTool,
-  'video-trimmer': VideoTrimmerTool,
-  'video-to-gif': VideoToGifTool,
-  'video-to-mp3': VideoToAudioTool,
-  'audio-to-video': AudioToVideoTool,
+  'organize-pdf': lazyExport(loadPdfEditTools, 'OrganizePdfTool'),
+  'watermark-pdf': lazyExport(loadPdfEditTools, 'WatermarkPdfTool'),
+  'page-numbers-pdf': lazyExport(loadPdfEditTools, 'PageNumbersPdfTool'),
+  'sign-pdf': lazyExport(loadPdfEditTools, 'SignPdfTool'),
+  'redact-crop-pdf': lazyExport(loadPdfEditTools, 'RedactCropPdfTool'),
+  'pdf-reader-compare': lazyExport(loadPdfEditTools, 'PdfReaderCompareTool'),
+  'repair-unlock-pdf': lazyExport(loadPdfEditTools, 'RepairUnlockPdfTool'),
 
-  // Audio Suite (4 tools — Clip Utils)
-  'audio-trimmer': AudioTrimmerTool,
-  'audio-volume-booster': AudioVolumeBoosterTool,
-  'audio-converter': AudioConverterMergerTool,
-  'text-to-speech': TextToSpeechTool,
+  // Image Suite (8 tools)
+  'image-compressor': lazyExport(loadImageTools, 'ImageCompressorTool'),
+  'image-resizer': lazyExport(loadImageTools, 'ImageResizerTool'),
+  'jpg-to-png': lazyExport(loadImageTools, 'JpgToPngTool'),
+  'png-to-jpg': lazyExport(loadImageTools, 'PngToJpgTool'),
+  'webp-converter': lazyExport(loadImageTools, 'WebpConverterTool'),
+  'background-remover': lazyExport(loadExtraMediaTools, 'BackgroundRemoverTool'),
+  'passport-photo-maker': lazyExport(loadExtraMediaTools, 'PassportPhotoMakerTool'),
+  'image-crop-rotate': lazyExport(loadExtraMediaTools, 'ImageCropRotateTool'),
+
+  // Video Suite (5 tools)
+  'video-compressor': lazyExport(loadVideoAudioTools, 'VideoCompressorTool'),
+  'video-to-mp3': lazyExport(loadVideoAudioTools, 'VideoToAudioTool'),
+  'video-trimmer': lazyExport(loadExtraMediaTools, 'VideoTrimmerTool'),
+  'video-to-gif': lazyExport(loadExtraMediaTools, 'VideoToGifTool'),
+  'audio-to-video': lazyExport(loadExtraMediaTools, 'AudioToVideoTool'),
+
+  // Audio Suite (4 tools)
+  'audio-trimmer': lazyExport(loadVideoAudioTools, 'AudioTrimmerTool'),
+  'audio-volume-booster': lazyExport(loadExtraMediaTools, 'AudioVolumeBoosterTool'),
+  'audio-converter': lazyExport(loadExtraMediaTools, 'AudioConverterMergerTool'),
+  'text-to-speech': lazyExport(loadExtraMediaTools, 'TextToSpeechTool'),
 
   // Text, Developer & Productivity (7 tools)
-  'word-counter': WordCounterTool,
-  'case-converter': CaseConverterTool,
-  'json-formatter': JsonFormatterTool,
-  'base64-codec': Base64CodecTool,
-  'uuid-hash-generator': UuidHashGeneratorTool,
-  'qr-code-generator': QrCodeGeneratorTool,
-  'password-generator': PasswordGeneratorTool,
+  'word-counter': lazyExport(loadDevTextTools, 'WordCounterTool'),
+  'case-converter': lazyExport(loadDevTextTools, 'CaseConverterTool'),
+  'json-formatter': lazyExport(loadDevTextTools, 'JsonFormatterTool'),
+  'base64-codec': lazyExport(loadDevTextTools, 'Base64CodecTool'),
+  'uuid-hash-generator': lazyExport(loadDevTextTools, 'UuidHashGeneratorTool'),
+  'qr-code-generator': lazyExport(loadDevTextTools, 'QrCodeGeneratorTool'),
+  'password-generator': lazyExport(loadDevTextTools, 'PasswordGeneratorTool'),
 };
 
-export function getToolComponent(slug: string): React.FC<ToolComponentProps> | undefined {
+export function getToolComponent(
+  slug: string
+): React.LazyExoticComponent<React.ComponentType<ToolComponentProps>> | undefined {
   return TOOL_COMPONENTS[slug];
 }

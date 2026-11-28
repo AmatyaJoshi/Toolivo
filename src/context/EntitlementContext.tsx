@@ -1,12 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import type { User } from 'firebase/auth';
 import type { SupportedCurrency } from '../data/proPlans';
 import { SPONSOR_FRAMES, type SponsorFrame } from '../data/sponsors';
-import {
-  signInWithGoogleOptional,
-  signOutOptional,
-  subscribeOptionalAuth,
-} from '../lib/firebaseClient';
+
+export interface OptionalAuthUser {
+  uid: string;
+  email: string | null;
+}
 
 export interface ActiveEntitlement {
   id: string;
@@ -29,12 +28,13 @@ interface EntitlementContextValue {
   currency: SupportedCurrency;
   setCurrency: (c: SupportedCurrency) => void;
   entitlement: ActiveEntitlement | null;
+  activeRecoveryKey: string | null;
   isPro: boolean;
   sponsorFrames: SponsorFrame[];
   refreshSponsors: () => Promise<void>;
   activateByKey: (rawKey: string) => Promise<{ ok: boolean; error?: string }>;
   clearEntitlement: () => void;
-  optionalUser: User | null;
+  optionalUser: OptionalAuthUser | null;
   connectGoogleAccount: () => Promise<{ ok: boolean; error?: string }>;
   disconnectGoogleAccount: () => Promise<void>;
 }
@@ -44,33 +44,53 @@ const EntitlementContext = createContext<EntitlementContextValue | null>(null);
 const KEY_STORAGE = 'toolivo_pro_recovery_key';
 const DEVICE_STORAGE = 'toolivo_device_id';
 const CURRENCY_STORAGE = 'toolivo_currency_v2';
+const OPTIONAL_SYNC_HINT = 'toolivo_google_sync_enabled';
 
 function detectDefaultCurrency(): SupportedCurrency {
-  const saved = localStorage.getItem(CURRENCY_STORAGE) as SupportedCurrency | null;
-  if (saved && ['USD', 'INR', 'EUR', 'GBP', 'CAD', 'AUD', 'SGD'].includes(saved)) {
-    return saved;
+  try {
+    const saved = localStorage.getItem(CURRENCY_STORAGE) as SupportedCurrency | null;
+    if (saved && ['USD', 'INR', 'EUR', 'GBP', 'CAD', 'AUD', 'SGD'].includes(saved)) {
+      return saved;
+    }
+  } catch {
+    // Ignore storage access errors
   }
   return 'USD';
 }
 
 function getOrCreateDeviceId(): string {
-  let id = localStorage.getItem(DEVICE_STORAGE);
-  if (!id) {
-    id = `dev_${Math.random().toString(36).slice(2, 12)}`;
-    localStorage.setItem(DEVICE_STORAGE, id);
+  try {
+    let id = localStorage.getItem(DEVICE_STORAGE);
+    if (!id) {
+      id = `dev_${Math.random().toString(36).slice(2, 12)}`;
+      localStorage.setItem(DEVICE_STORAGE, id);
+    }
+    return id;
+  } catch {
+    return 'dev_ephemeral';
   }
-  return id;
 }
 
 export const EntitlementProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currency, setCurrencyState] = useState<SupportedCurrency>(detectDefaultCurrency);
   const [entitlement, setEntitlement] = useState<ActiveEntitlement | null>(null);
+  const [activeRecoveryKey, setActiveRecoveryKey] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(KEY_STORAGE);
+    } catch {
+      return null;
+    }
+  });
   const [sponsorFrames, setSponsorFrames] = useState<SponsorFrame[]>(SPONSOR_FRAMES);
-  const [optionalUser, setOptionalUser] = useState<User | null>(null);
+  const [optionalUser, setOptionalUser] = useState<OptionalAuthUser | null>(null);
 
   const setCurrency = useCallback((next: SupportedCurrency) => {
     setCurrencyState(next);
-    localStorage.setItem(CURRENCY_STORAGE, next);
+    try {
+      localStorage.setItem(CURRENCY_STORAGE, next);
+    } catch {
+      // Ignore storage access errors
+    }
   }, []);
 
   const refreshSponsors = useCallback(async () => {
@@ -101,7 +121,12 @@ export const EntitlementProvider: React.FC<{ children: React.ReactNode }> = ({ c
       });
       const data = await res.json();
       if (res.ok && data.valid && data.entitlement) {
-        localStorage.setItem(KEY_STORAGE, cleaned);
+        try {
+          localStorage.setItem(KEY_STORAGE, cleaned);
+        } catch {
+          // Ignore storage error
+        }
+        setActiveRecoveryKey(cleaned);
         setEntitlement(data.entitlement);
         return { ok: true };
       }
@@ -112,58 +137,101 @@ export const EntitlementProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   const clearEntitlement = useCallback(() => {
-    localStorage.removeItem(KEY_STORAGE);
+    try {
+      localStorage.removeItem(KEY_STORAGE);
+    } catch {
+      // Ignore storage error
+    }
+    setActiveRecoveryKey(null);
     setEntitlement(null);
   }, []);
 
   // Validate saved accountless recovery key on mount & fetch live sponsor frames
   useEffect(() => {
     refreshSponsors();
-    const savedKey = localStorage.getItem(KEY_STORAGE);
+    let savedKey: string | null = null;
+    try {
+      savedKey = localStorage.getItem(KEY_STORAGE);
+    } catch {
+      savedKey = null;
+    }
     if (savedKey) {
       activateByKey(savedKey).then((res) => {
         if (!res.ok) {
-          localStorage.removeItem(KEY_STORAGE);
+          try {
+            localStorage.removeItem(KEY_STORAGE);
+          } catch {
+            // Ignore
+          }
+          setActiveRecoveryKey(null);
         }
       });
     }
   }, [activateByKey, refreshSponsors]);
 
-  // Optional Firebase Auth listener for registered account entitlement sync
+  // Lazy-load Firebase Auth ONLY if the user previously opted into optional Google Account Sync
   useEffect(() => {
-    return subscribeOptionalAuth(async (user) => {
-      setOptionalUser(user);
-      if (user && user.email) {
-        try {
-          const savedKey = localStorage.getItem(KEY_STORAGE) || undefined;
-          const res = await fetch('/api/pro/entitlement/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              firebaseUid: user.uid,
-              email: user.email,
-              licenseKey: savedKey,
-            }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data.entitlements) && data.entitlements.length > 0) {
-              setEntitlement(data.entitlements[0]);
+    let syncOptedIn = false;
+    try {
+      syncOptedIn = localStorage.getItem(OPTIONAL_SYNC_HINT) === '1';
+    } catch {
+      syncOptedIn = false;
+    }
+    if (!syncOptedIn) return;
+
+    let unsubscribe: (() => void) | null = null;
+    let active = true;
+
+    import('../lib/firebaseClient')
+      .then(({ subscribeOptionalAuth }) => {
+        if (!active) return;
+        unsubscribe = subscribeOptionalAuth(async (user) => {
+          setOptionalUser(user ? { uid: user.uid, email: user.email } : null);
+          if (user && user.email) {
+            try {
+              const savedKey = localStorage.getItem(KEY_STORAGE) || undefined;
+              const res = await fetch('/api/pro/entitlement/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  firebaseUid: user.uid,
+                  email: user.email,
+                  licenseKey: savedKey,
+                }),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data.entitlements) && data.entitlements.length > 0) {
+                  setEntitlement(data.entitlements[0]);
+                }
+              }
+            } catch {
+              // Optional sync silent fallback
             }
           }
-        } catch {
-          // Optional sync silent fallback
-        }
-      }
-    });
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const connectGoogleAccount = useCallback(async () => {
     try {
+      const { signInWithGoogleOptional } = await import('../lib/firebaseClient');
       const user = await signInWithGoogleOptional();
       if (!user.email) {
         return { ok: false, error: 'Google account did not return an email address.' };
       }
+      try {
+        localStorage.setItem(OPTIONAL_SYNC_HINT, '1');
+      } catch {
+        // Ignore
+      }
+      setOptionalUser({ uid: user.uid, email: user.email });
       const savedKey = localStorage.getItem(KEY_STORAGE) || undefined;
       const res = await fetch('/api/pro/entitlement/sync', {
         method: 'POST',
@@ -188,7 +256,13 @@ export const EntitlementProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   const disconnectGoogleAccount = useCallback(async () => {
-    await signOutOptional();
+    try {
+      localStorage.removeItem(OPTIONAL_SYNC_HINT);
+      const { signOutOptional } = await import('../lib/firebaseClient');
+      await signOutOptional();
+    } catch {
+      // Ignore
+    }
     setOptionalUser(null);
   }, []);
 
@@ -198,6 +272,7 @@ export const EntitlementProvider: React.FC<{ children: React.ReactNode }> = ({ c
         currency,
         setCurrency,
         entitlement,
+        activeRecoveryKey,
         isPro: Boolean(entitlement?.active),
         sponsorFrames,
         refreshSponsors,
